@@ -29,6 +29,17 @@ Creando 8 productores y 3 consumidores. Acepta numeros entre 1 y 10.
 #define MAX_pila 20 // define el tamaño maximo de la pila
 #define TIEMPO 30 //define el tiempo que estaran productores y consumidores trabajando.
 
+typedef struct item_struct {
+    int data;
+    struct item_struct *next;
+} item;
+
+void initList(item** head);
+void push(item* head, int data);
+int pop(item* head);
+int factorial(int n);
+
+item* head;
 bool  done = false; //bandera que indica que hemos acabado
 int  numero = 0 ; //buffer contador simulacion
 int  cont = 0 ; //contador buffer LIFO
@@ -48,7 +59,7 @@ void *productor(void *t){
 	struct  datos_hilo  *pData = (struct  datos_hilo  *)t ;
 	int tiempo_dormir_ms=1;
 
-	printf("%s.\n producer %d started\n", pData ->message , pData ->id);
+	printf("\n producer %d started\n", pData ->id);
 
 		while(!done){
 
@@ -66,7 +77,9 @@ void *productor(void *t){
 
 					
 					numero=rand()% 10 + 1;
-					pila[cont]=numero; //introducimos el numero en la pila
+					//pila[cont]=numero; //introducimos el numero en la pila
+					//printf("producer metiendo numero %d\n", numero);
+					push(head, numero);
 					cont++;
 					pthread_cond_signal (&numero_cond);
 					// hacemos esperar a los consumidores si esta vacia
@@ -91,7 +104,7 @@ void *consumidor(void *t){
 	struct  datos_hilo  *pData = (struct  datos_hilo  *)t ;
 	int tiempo_dormir_ms=1;
 	int numero_f;
-	printf("%s.\nconsumer %d started\n", pData ->message , pData ->id);
+	printf("\nconsumer %d started\n", pData ->id);
 
 	while(!done) {
 		
@@ -102,21 +115,25 @@ void *consumidor(void *t){
 		
 		
 			if (cont <= 0){
-			if (!done){
-				printf ("consumer[%d] waiting for buffer\n", pData ->id);
-				pthread_cond_wait  (&numero_cond , &numero_mutex );
-				// el productor no esta haciendo esperar
-				printf ("consumer[%d] stop waiting\n", pData ->id);
-			}	
+				if (!done){
+					printf ("consumer[%d] waiting for buffer\n", pData ->id);
+					pthread_cond_wait  (&numero_cond , &numero_mutex );
+					// el productor no esta haciendo esperar
+					printf ("consumer[%d] stop waiting\n", pData ->id);
+				}	
 			}
 
 		if (!done){
 				
-				numero=pila[cont-1];
-				cont--;
-				numero_f=factorial(numero);
-				//extraemos el numero de la pila, y hacemos el factorial
-				printf("consumer[%d] removed %d and computed  %d!= %i , stack size: %d \n", pData ->id, numero,numero,numero_f,cont);
+				//numero=pila[cont-1];
+				//printf("Extrayendo numero");
+				numero = pop(head);
+				if (numero != -1) { //lista vacia
+					cont--;
+					numero_f=factorial(numero);
+					//extraemos el numero de la pila, y hacemos el factorial
+					printf("consumer[%d] removed %d and computed  %d!= %i , stack size: %d \n", pData ->id, numero,numero,numero_f,cont);
+				}
 		}
 		else{
 
@@ -131,7 +148,7 @@ void *consumidor(void *t){
 
 int  main (int argc , char *argv []){
 	
-
+	initList(&head);
 	srand(time(NULL)); // semilla para el numero aleatorio, si no la secuencia se repite siempre.
 
 	if(argc<=2) {
@@ -152,19 +169,8 @@ int  main (int argc , char *argv []){
 
 		printf("producers: %i consumers:%i \n",n_prod , n_cons);
 						
-		printf("initialize stack:");
-					int i;
-					for (i=0; i<MAX_pila; i++) {
-						pila[i]=0;
-        			 printf( "%d ;", pila[i] );
-    				}
-    				printf("\n");
-    	// NO es la mejor manera ni de lejos. Lo suyo seria por ejemplo una "linked list". No me ha salido.
-    	// el array que estamos usando ocupa toda la memoria todo el rato, independientemente de su tamaño real.
-
 		sleep(3);
 
-		int thread_id [n_prod  + n_cons];
 		pthread_t  thread[n_prod  + n_cons];
 		pthread_attr_t  attr;
 		int t;
@@ -226,4 +232,46 @@ int factorial(int n)
         return 1;
     else
         return n * factorial(n - 1);
+}
+
+
+void initList(item** head){
+	*head = (item*)malloc(sizeof(item));
+	if ((*head) == NULL) {
+		return; //esto puede ser una fuente de problemas. deberia devolver un error.
+	}
+	(*head)->data = -1; //el primero, nunca lo usare. (cont=0)
+	(*head)->next = NULL;
+}
+
+void push(item*  head, int data){ //pone elemento en la lista
+	item* newItem;
+	item* aux = head;
+
+	while(aux->next != NULL){
+		aux = aux->next; //recorro la lista hasta el final
+	}
+	newItem = (item *) malloc(sizeof(item));
+	newItem->data = data;
+	newItem->next = NULL;
+	aux->next = newItem;
+}
+
+int pop(item* head){  // quita el ultimo valor.
+	item *aux = head->next;
+	item* previous = head;
+	int temp;
+
+	if(aux != NULL) {//lista esta vacia
+		while(aux->next != NULL){
+			previous = aux;
+			aux = aux->next;
+		}
+		
+		temp = aux->data;
+		free(aux);
+		previous->next = NULL; 
+		return temp;
+	}
+	return -1;
 }
