@@ -130,9 +130,8 @@ void *consumidor(void *t){
 }
 
 int  main (int argc , char *argv []){
-	
 
-	srand(time(NULL)); // semilla para el numero aleatorio, si no la secuencia se repite siempre.
+	srand (time(NULL)); // semilla para el numero aleatorio, si no la secuencia se repite siempre.
 
 	if(argc<=2) {
         printf("I need 2 arguments please... \n ");
