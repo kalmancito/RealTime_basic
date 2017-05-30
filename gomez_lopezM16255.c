@@ -1,0 +1,226 @@
+/*
+Alumno: Miguel Angel Gomez Lopez. M16255
+
+Codigo para la asignatura de RT. Uso de hilos, mutexes y esperas condicionales en lenguaje C. 
+Este codigo ha sido probado bajo Linux (Ubuntu 14.04). 
+Para compilarlo es necesario la libreria Pthreads de Posix, por ejemplo en ubuntu se descarga:
+
+	sudo apt-get install libpthread-stubs0-dev
+
+Una vez descargada, para compilar este codigo:
+
+	gcc -pthread -o codigoRT gomez_lopezM16255.c 
+
+Y para ejecutarlo, por ejemplo:
+
+	./codigoRT 8 3
+
+Creando 8 productores y 3 consumidores. Acepta numeros entre 1 y 10.
+
+*/
+
+#include  <pthread.h>
+#include  <stdio.h>
+#include  <stdlib.h>
+#include  <stdbool.h>
+#include  <unistd.h>
+#include  <time.h>
+
+#define MAX_pila 20 // define el tamaño maximo de la pila
+#define TIEMPO 30 //define el tiempo que estaran productores y consumidores trabajando.
+
+bool  done = false; //bandera que indica que hemos acabado
+int  numero = 0 ; //buffer contador simulacion
+int  cont = 0 ; //contador buffer LIFO
+int  pila[MAX_pila]; //buffer LIFO 
+pthread_mutex_t  numero_mutex; // variable mutex
+pthread_cond_t numero_cond; //variable condicional
+
+#define  MSGLEN  32
+
+struct  datos_hilo {
+	int id ;
+	char  message[MSGLEN];
+}; // no estrictamente necesario
+
+void *productor(void *t){
+
+	struct  datos_hilo  *pData = (struct  datos_hilo  *)t ;
+	int tiempo_dormir_ms=1;
+
+	printf("%s.\n producer %d started\n", pData ->message , pData ->id);
+
+		while(!done){
+
+			tiempo_dormir_ms=rand()% 1000 + 1;
+			usleep(tiempo_dormir_ms*1000);
+			pthread_mutex_lock (& numero_mutex );  
+			//aqui el mutex controla el acceso simultaneo de todos los hilos a la pila
+
+			if (cont == MAX_pila){
+				printf ("producer [%d]: stack full\n", pData ->id);
+			}
+			else{
+				if(!done){ 
+				//como nos hemos quedado durmiendo, podria ser que ya la hubieran levantado
+
+					
+					numero=rand()% 10 + 1;
+					pila[cont]=numero; //introducimos el numero en la pila
+					cont++;
+					pthread_cond_signal (&numero_cond);
+					// hacemos esperar a los consumidores si esta vacia
+					printf("producer [%d] added %d to stack, stack size: %d \n", pData ->id, numero,cont );
+				}
+				else{
+
+					pthread_cond_broadcast(&numero_cond); 
+					// si ya hemos levantado la bandera liberamos de la espera a todos los consumidores
+					printf ("Producer [%d] Broadcast received with done flag set\n", pData ->id);
+				}
+			}
+			pthread_mutex_unlock (& numero_mutex );
+		}
+
+	printf("producer thread %d done.\n",pData ->id);
+	pthread_exit(NULL);
+}
+
+void *consumidor(void *t){
+		
+	struct  datos_hilo  *pData = (struct  datos_hilo  *)t ;
+	int tiempo_dormir_ms=1;
+	int numero_f;
+	printf("%s.\nconsumer %d started\n", pData ->message , pData ->id);
+
+	while(!done) {
+		
+		tiempo_dormir_ms=rand()% 1000 + 1;
+		usleep(tiempo_dormir_ms*1000);
+		pthread_mutex_lock (& numero_mutex );
+		
+		
+		
+			if (cont <= 0){
+			if (!done){
+				printf ("consumer[%d] waiting for buffer\n", pData ->id);
+				pthread_cond_wait  (&numero_cond , &numero_mutex );
+				// el productor no esta haciendo esperar
+				printf ("consumer[%d] stop waiting\n", pData ->id);
+			}	
+			}
+
+		if (!done){
+				
+				numero=pila[cont-1];
+				cont--;
+				numero_f=factorial(numero);
+				//extraemos el numero de la pila, y hacemos el factorial
+				printf("consumer[%d] removed %d and computed  %d!= %i , stack size: %d \n", pData ->id, numero,numero,numero_f,cont);
+		}
+		else{
+
+			printf ("Consumer [%d] Broadcast received with done flag set\n", pData ->id);
+		}
+		pthread_mutex_unlock (& numero_mutex );
+	}
+
+	printf("consumer thread %d done.\n",pData ->id);
+	pthread_exit(NULL);
+}
+
+int  main (int argc , char *argv []){
+	
+	if(argc<=2) {
+        printf("I need 2 arguments please... \n ");
+        exit(1);
+    } 
+      //otherwise continue on our merry way....
+    else{
+    	
+		int n_prod = atoi(argv[1]);  //argv[0] is the program name
+	    int n_cons= atoi(argv[2]);
+
+	    if(n_prod>10|| n_cons>10||n_cons<=0||n_prod<=0) {
+       		printf("I need 2 arguments from 1 to 10 please... \n ");
+        	exit(1);
+    	} 
+	
+
+		printf("producers: %i consumers:%i \n",n_prod , n_cons);
+						
+		printf("initialize stack:");
+					int i;
+					for (i=0; i<MAX_pila; i++) {
+						pila[i]=0;
+        			 printf( "%d ;", pila[i] );
+    				}
+    				printf("\n");
+    	// NO es la mejor manera ni de lejos. Lo suyo seria por ejemplo una "linked list". No me ha salido.
+    	// el array que estamos usando ocupa toda la memoria todo el rato, independientemente de su tamaño real.
+
+		sleep(3);
+
+		int thread_id [n_prod  + n_cons];
+		pthread_t  thread[n_prod  + n_cons];
+		pthread_attr_t  attr;
+		int t;
+		void *status;
+		struct  datos_hilo  *pthreadData = malloc(sizeof(struct  datos_hilo ) *(n_prod + n_cons));
+		
+		if(!pthreadData) {
+			fprintf(stderr , "Cannot allocate thread data!\r\n");
+			return  255 ;
+		}
+		
+		/*  Initialize  mutex  and  condition  variable  objects  */
+		pthread_mutex_init (&numero_mutex , NULL);
+		pthread_cond_init  (&numero_cond , NULL);
+		/*  Initialize  and  set  thread  detached  attribute  */
+		pthread_attr_init (&attr);
+		pthread_attr_setdetachstate (&attr , PTHREAD_CREATE_JOINABLE );
+
+		/* Spawn the threads */
+
+		for(t=0; t<n_prod; t++) {
+			
+			pthreadData[t].id = t ;
+			pthread_create (& thread[t], &attr , productor, (void  *)& pthreadData[t]);
+		}
+
+		for(t=0; t<n_cons; t++) {
+			
+			pthreadData[t+n_prod].id = t+n_prod ;
+			pthread_create (& thread[t+n_prod], &attr , consumidor,
+			(void  *)& pthreadData[t+n_prod ]);
+		}
+
+		sleep (TIEMPO); //30seg nos piden
+		done = true ;
+		printf("flag up \n");
+
+		/* Free  attribute  and  wait  for  the  other  threads  */
+
+		for(t=0; t<n_prod+n_cons; t++){
+			pthread_join(thread[t], &status );
+		}
+		
+		printf("Main: program completed. stack final size = %d\n",cont );
+		
+		/* Clean  up and  exit */
+		if(pthreadData) free(pthreadData );
+		pthread_attr_destroy (&attr);
+		pthread_mutex_destroy (& numero_mutex );
+		pthread_cond_destroy (& numero_cond );
+		pthread_exit(NULL);
+	}
+}
+
+
+int factorial(int n)
+{
+    if (n == 1||n==0)
+        return 1;
+    else
+        return n * factorial(n - 1);
+}
